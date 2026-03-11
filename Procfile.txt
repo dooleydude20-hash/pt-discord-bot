@@ -1,0 +1,1 @@
+worker: python pt_bot.py
