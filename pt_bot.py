@@ -177,6 +177,54 @@ async def midnight_reset():
             missed_days[member.id] = missed_days.get(member.id, 0) + 1
 
     submissions.clear()
+    
+from datetime import time
+
+@tasks.loop(time=time(23, 59))  # 10:00 PM report
+async def daily_report():
+
+    guild = bot.guilds[0]
+
+    status_channel = discord.utils.get(guild.text_channels, name="pt-status")
+
+    push_role = discord.utils.get(guild.roles, name="Push Ups")
+    sit_role = discord.utils.get(guild.roles, name="Sit Ups")
+
+    push_submitted = []
+    push_missing = []
+
+    sit_submitted = []
+    sit_missing = []
+
+    for member in push_role.members:
+        if member.id in submissions:
+            push_submitted.append(member.display_name)
+        else:
+            push_missing.append(member.display_name)
+
+    for member in sit_role.members:
+        if member.id in submissions:
+            sit_submitted.append(member.display_name)
+        else:
+            sit_missing.append(member.display_name)
+
+    report = f"""
+PT Daily Report
+
+Push Ups Submitted
+{chr(10).join(push_submitted) or "None"}
+
+Push Ups Missing
+{chr(10).join(push_missing) or "None"}
+
+Sit Ups Submitted
+{chr(10).join(sit_submitted) or "None"}
+
+Sit Ups Missing
+{chr(10).join(sit_missing) or "None"}
+"""
+
+    await status_channel.send(report)
 
 
 bot.run(TOKEN)
