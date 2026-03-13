@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands, tasks
-from datetime import datetime
+from datetime import datetime, time
 import pytz
 import os
 
@@ -12,17 +12,23 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-submissions = set()
-missed_days = {}
+push_submissions = set()
+sit_submissions = set()
+
+push_missed = {}
+sit_missed = {}
 
 TIMEZONE = pytz.timezone("US/Eastern")
+
 REMINDER_TIMES = ["09:00","13:00","18:00","21:00"]
+
+PUSH_CHANNEL = "pushups-submissions"
+SIT_CHANNEL = "situps-submissions"
 
 PUSH_ROLE = "Push Ups"
 SIT_ROLE = "Sit Ups"
 
-PUSH_CHANNEL = "pushups-submissions"
-SIT_CHANNEL = "situps-submissions"
+STATUS_CHANNEL = "pt-status"
 
 
 @bot.event
@@ -30,6 +36,7 @@ async def on_ready():
     print(f"Logged in as {bot.user}")
     reminder_loop.start()
     midnight_reset.start()
+    daily_report.start()
 
 
 @bot.event
@@ -40,87 +47,93 @@ async def on_message(message):
 
     if message.attachments:
 
-        guild = message.guild
-        push_role = discord.utils.get(guild.roles, name=PUSH_ROLE)
-        sit_role = discord.utils.get(guild.roles, name=SIT_ROLE)
-
         for file in message.attachments:
 
             if file.filename.endswith((".mp4",".mov",".webm",".mkv")):
 
-                correct_channel = False
+                if message.channel.name == PUSH_CHANNEL:
 
-                if message.channel.name == PUSH_CHANNEL and push_role in message.author.roles:
-                    correct_channel = True
-
-                if message.channel.name == SIT_CHANNEL and sit_role in message.author.roles:
-                    correct_channel = True
-
-                if correct_channel:
-
-                    if message.author.id not in submissions:
-
-                        submissions.add(message.author.id)
-
+                    if message.author.id not in push_submissions:
+                        push_submissions.add(message.author.id)
                         await message.channel.send(
-                            f"{message.author.mention} submission recorded for today."
+                            f"{message.author.mention} Push Ups submission recorded."
+                        )
+
+                elif message.channel.name == SIT_CHANNEL:
+
+                    if message.author.id not in sit_submissions:
+                        sit_submissions.add(message.author.id)
+                        await message.channel.send(
+                            f"{message.author.mention} Sit Ups submission recorded."
                         )
 
     await bot.process_commands(message)
 
 
 @bot.command()
-async def submitted(ctx):
+async def status(ctx):
 
-    names = []
+    guild = ctx.guild
 
-    for user_id in submissions:
+    push_role = discord.utils.get(guild.roles, name=PUSH_ROLE)
+    sit_role = discord.utils.get(guild.roles, name=SIT_ROLE)
 
-        member = ctx.guild.get_member(user_id)
+    push_done = []
+    push_missing = []
 
-        if member:
-            names.append(member.display_name)
+    sit_done = []
+    sit_missing = []
 
-    if names:
-        await ctx.send("Submitted today:\n" + "\n".join(names))
-    else:
-        await ctx.send("No submissions yet.")
+    for member in push_role.members:
+        if member.id in push_submissions:
+            push_done.append(member.display_name)
+        else:
+            push_missing.append(member.display_name)
 
+    for member in sit_role.members:
+        if member.id in sit_submissions:
+            sit_done.append(member.display_name)
+        else:
+            sit_missing.append(member.display_name)
 
-@bot.command()
-async def missing(ctx):
+    report = f"""
+Push Ups Submitted
+{chr(10).join(push_done) or "None"}
 
-    push_role = discord.utils.get(ctx.guild.roles, name=PUSH_ROLE)
-    sit_role = discord.utils.get(ctx.guild.roles, name=SIT_ROLE)
+Push Ups Missing
+{chr(10).join(push_missing) or "None"}
 
-    missing = []
+Sit Ups Submitted
+{chr(10).join(sit_done) or "None"}
 
-    for member in push_role.members + sit_role.members:
+Sit Ups Missing
+{chr(10).join(sit_missing) or "None"}
+"""
 
-        if member.id not in submissions:
-            missing.append(member.display_name)
-
-    if missing:
-        await ctx.send("Missing submissions:\n" + "\n".join(missing))
-    else:
-        await ctx.send("Everyone submitted today.")
+    await ctx.send(report)
 
 
 @bot.command()
 async def misses(ctx):
 
-    push_role = discord.utils.get(ctx.guild.roles, name=PUSH_ROLE)
-    sit_role = discord.utils.get(ctx.guild.roles, name=SIT_ROLE)
+    guild = ctx.guild
+
+    push_role = discord.utils.get(guild.roles, name=PUSH_ROLE)
+    sit_role = discord.utils.get(guild.roles, name=SIT_ROLE)
 
     report = []
 
-    for member in push_role.members + sit_role.members:
+    report.append("Push Ups Missed Days")
 
-        misses = missed_days.get(member.id, 0)
+    for member in push_role.members:
+        report.append(f"{member.display_name} — {push_missed.get(member.id,0)}")
 
-        report.append(f"{member.display_name} — {misses}")
+    report.append("\nSit Ups Missed Days")
 
-    await ctx.send("Missed Days:\n" + "\n".join(report))
+    for member in sit_role.members:
+        report.append(f"{member.display_name} — {sit_missed.get(member.id,0)}")
+
+    await ctx.send("\n".join(report))
 
 
 @tasks.loop(minutes=1)
@@ -142,69 +155,49 @@ async def reminder_loop():
         sit_mentions = []
 
         for member in push_role.members:
-
-            if member.id not in submissions:
+            if member.id not in push_submissions:
                 push_mentions.append(member.mention)
 
         for member in sit_role.members:
-
-            if member.id not in submissions:
+            if member.id not in sit_submissions:
                 sit_mentions.append(member.mention)
 
         if push_mentions:
             await push_channel.send(
-                "Reminder to submit push-up PT video:\n" + " ".join(push_mentions)
+                "Reminder to submit PUSH UPS video:\n" + " ".join(push_mentions)
             )
 
         if sit_mentions:
             await sit_channel.send(
-                "Reminder to submit sit-up PT video:\n" + " ".join(sit_mentions)
+                "Reminder to submit SIT UPS video:\n" + " ".join(sit_mentions)
             )
 
 
-@tasks.loop(time=datetime.strptime("23:59","%H:%M").time())
-async def midnight_reset():
-
-    guild = bot.guilds[0]
-
-    push_role = discord.utils.get(guild.roles, name=PUSH_ROLE)
-    sit_role = discord.utils.get(guild.roles, name=SIT_ROLE)
-
-    for member in push_role.members + sit_role.members:
-
-        if member.id not in submissions:
-
-            missed_days[member.id] = missed_days.get(member.id, 0) + 1
-
-    submissions.clear()
-    
-from datetime import time
-
-@tasks.loop(time=time(23, 59))  # 10:00 PM report
+@tasks.loop(time=time(22,0))
 async def daily_report():
 
     guild = bot.guilds[0]
 
-    status_channel = discord.utils.get(guild.text_channels, name="pt-status")
+    status_channel = discord.utils.get(guild.text_channels, name=STATUS_CHANNEL)
 
-    push_role = discord.utils.get(guild.roles, name="Push Ups")
-    sit_role = discord.utils.get(guild.roles, name="Sit Ups")
+    push_role = discord.utils.get(guild.roles, name=PUSH_ROLE)
+    sit_role = discord.utils.get(guild.roles, name=SIT_ROLE)
 
-    push_submitted = []
+    push_done = []
     push_missing = []
 
-    sit_submitted = []
+    sit_done = []
     sit_missing = []
 
     for member in push_role.members:
-        if member.id in submissions:
-            push_submitted.append(member.display_name)
+        if member.id in push_submissions:
+            push_done.append(member.display_name)
         else:
             push_missing.append(member.display_name)
 
     for member in sit_role.members:
-        if member.id in submissions:
-            sit_submitted.append(member.display_name)
+        if member.id in sit_submissions:
+            sit_done.append(member.display_name)
         else:
             sit_missing.append(member.display_name)
 
@@ -212,19 +205,39 @@ async def daily_report():
 PT Daily Report
 
 Push Ups Submitted
-{chr(10).join(push_submitted) or "None"}
+{chr(10).join(push_done) or "None"}
 
 Push Ups Missing
 {chr(10).join(push_missing) or "None"}
 
 Sit Ups Submitted
-{chr(10).join(sit_submitted) or "None"}
+{chr(10).join(sit_done) or "None"}
 
 Sit Ups Missing
 {chr(10).join(sit_missing) or "None"}
 """
 
     await status_channel.send(report)
+
+
+@tasks.loop(time=time(23,59))
+async def midnight_reset():
+
+    guild = bot.guilds[0]
+
+    push_role = discord.utils.get(guild.roles, name=PUSH_ROLE)
+    sit_role = discord.utils.get(guild.roles, name=SIT_ROLE)
+
+    for member in push_role.members:
+        if member.id not in push_submissions:
+            push_missed[member.id] = push_missed.get(member.id,0) + 1
+
+    for member in sit_role.members:
+        if member.id not in sit_submissions:
+            sit_missed[member.id] = sit_missed.get(member.id,0) + 1
+
+    push_submissions.clear()
+    sit_submissions.clear()
 
 
 bot.run(TOKEN)
