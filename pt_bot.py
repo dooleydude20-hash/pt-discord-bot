@@ -20,7 +20,7 @@ sit_missed = {}
 
 TIMEZONE = pytz.timezone("US/Eastern")
 
-REMINDER_TIMES = ["09:00","13:00","18:00","21:00"]
+REMINDER_TIMES = ["09:00","11:00","13:00","15:00","18:00","21:00","23:00"]
 
 PUSH_CHANNEL = "pushups-submissions"
 SIT_CHANNEL = "situps-submissions"
@@ -173,7 +173,7 @@ async def reminder_loop():
             )
 
 
-@tasks.loop(time=time(22,0))
+@tasks.loop(time=time(23,59))
 async def daily_report():
 
     guild = bot.guilds[0]
