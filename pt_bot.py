@@ -137,67 +137,83 @@ async def reminder_loop():
 
     last_reminder = now
 
-    guild = bot.guilds[0]
+    try:
+        guild = bot.guilds[0]
 
-    push_role = discord.utils.get(guild.roles, name=PUSH_ROLE)
-    sit_role = discord.utils.get(guild.roles, name=SIT_ROLE)
+        push_role = discord.utils.get(guild.roles, name=PUSH_ROLE)
+        sit_role = discord.utils.get(guild.roles, name=SIT_ROLE)
 
-    push_channel = discord.utils.get(guild.text_channels, name=PUSH_CHANNEL)
-    sit_channel = discord.utils.get(guild.text_channels, name=SIT_CHANNEL)
+        push_channel = discord.utils.get(guild.text_channels, name=PUSH_CHANNEL)
+        sit_channel = discord.utils.get(guild.text_channels, name=SIT_CHANNEL)
 
-    if not push_role or not sit_role:
-        return
+        if not push_role or not sit_role:
+            print("ERROR: Roles not found")
+            return
 
-    push_mentions = []
-    sit_mentions = []
+        push_mentions = []
+        sit_mentions = []
 
-    for member in push_role.members:
-        if member.id not in push_submissions:
-            push_mentions.append(member.mention)
+        for member in push_role.members:
+            if member.id not in push_submissions:
+                push_mentions.append(member.mention)
 
-    for member in sit_role.members:
-        if member.id not in sit_submissions:
-            sit_mentions.append(member.mention)
+        for member in sit_role.members:
+            if member.id not in sit_submissions:
+                sit_mentions.append(member.mention)
 
-    if push_mentions:
-        await push_channel.send(
-            "**Reminder: Submit PUSH UPS video**\n" + " ".join(push_mentions)
-        )
+        if push_mentions:
+            await push_channel.send(
+                "**Reminder: Submit PUSH UPS video**\n" + " ".join(push_mentions)
+            )
 
-    if sit_mentions:
-        await sit_channel.send(
-            "**Reminder: Submit SIT UPS video**\n" + " ".join(sit_mentions)
-        )
+        if sit_mentions:
+            await sit_channel.send(
+                "**Reminder: Submit SIT UPS video**\n" + " ".join(sit_mentions)
+            )
+
+    except Exception as e:
+        print(f"REMINDER ERROR: {e}")
 
 
-@tasks.loop(time=time(23,59))
+# ✅ FIXED: timezone + crash protection
+@tasks.loop(time=time(23,59, tzinfo=TIMEZONE))
 async def daily_report():
+    try:
+        guild = bot.guilds[0]
 
-    guild = bot.guilds[0]
+        status_channel = discord.utils.get(
+            guild.text_channels, name=STATUS_CHANNEL
+        )
 
-    status_channel = discord.utils.get(guild.text_channels, name=STATUS_CHANNEL)
+        if not status_channel:
+            print("ERROR: Status channel not found")
+            return
 
-    push_role = discord.utils.get(guild.roles, name=PUSH_ROLE)
-    sit_role = discord.utils.get(guild.roles, name=SIT_ROLE)
+        push_role = discord.utils.get(guild.roles, name=PUSH_ROLE)
+        sit_role = discord.utils.get(guild.roles, name=SIT_ROLE)
 
-    push_done = []
-    push_missing = []
-    sit_done = []
-    sit_missing = []
+        if not push_role or not sit_role:
+            print("ERROR: Roles not found")
+            return
 
-    for member in push_role.members:
-        if member.id in push_submissions:
-            push_done.append(member.display_name)
-        else:
-            push_missing.append(member.display_name)
+        push_done = []
+        push_missing = []
+        sit_done = []
+        sit_missing = []
 
-    for member in sit_role.members:
-        if member.id in sit_submissions:
-            sit_done.append(member.display_name)
-        else:
-            sit_missing.append(member.display_name)
+        for member in push_role.members:
+            if member.id in push_submissions:
+                push_done.append(member.display_name)
+            else:
+                push_missing.append(member.display_name)
 
-    report = f"""
+        for member in sit_role.members:
+            if member.id in sit_submissions:
+                sit_done.append(member.display_name)
+            else:
+                sit_missing.append(member.display_name)
+
+        report = f"""
 **PT Daily Report**
 
 **Push Ups Submitted**
@@ -213,27 +229,34 @@ async def daily_report():
 {chr(10).join(sit_missing) or "None"}
 """
 
-    await status_channel.send(report)
+        await status_channel.send(report)
+
+    except Exception as e:
+        print(f"DAILY REPORT ERROR: {e}")
 
 
-@tasks.loop(time=time(0,0))
+# ✅ ALSO FIXED: timezone + crash protection
+@tasks.loop(time=time(0,0, tzinfo=TIMEZONE))
 async def midnight_reset():
+    try:
+        guild = bot.guilds[0]
 
-    guild = bot.guilds[0]
+        push_role = discord.utils.get(guild.roles, name=PUSH_ROLE)
+        sit_role = discord.utils.get(guild.roles, name=SIT_ROLE)
 
-    push_role = discord.utils.get(guild.roles, name=PUSH_ROLE)
-    sit_role = discord.utils.get(guild.roles, name=SIT_ROLE)
+        for member in push_role.members:
+            if member.id not in push_submissions:
+                push_missed[member.id] = push_missed.get(member.id,0) + 1
 
-    for member in push_role.members:
-        if member.id not in push_submissions:
-            push_missed[member.id] = push_missed.get(member.id,0) + 1
+        for member in sit_role.members:
+            if member.id not in sit_submissions:
+                sit_missed[member.id] = sit_missed.get(member.id,0) + 1
 
-    for member in sit_role.members:
-        if member.id not in sit_submissions:
-            sit_missed[member.id] = sit_missed.get(member.id,0) + 1
+        push_submissions.clear()
+        sit_submissions.clear()
 
-    push_submissions.clear()
-    sit_submissions.clear()
+    except Exception as e:
+        print(f"MIDNIGHT RESET ERROR: {e}")
 
 
 bot.run(TOKEN)
